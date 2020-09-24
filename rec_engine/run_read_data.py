@@ -31,6 +31,6 @@ def run(infile: str):
 
 
 if __name__ == '__main__':
-    places = run('first.1000.places.clean.json')
-    reviews = run('first.1000.reviews.clean.json')
+#    places = run('first.1000.places.clean.json')
+#    reviews = run('first.1000.reviews.clean.json')
     users = run('first.1000.users.clean.json')
