@@ -22,7 +22,7 @@ def run(infile: str):
             y = json.loads(json.dumps(ast.literal_eval(line)))
             row.append(y)
             i = i + 1
-            if i % 10000 == 0:
+            if i % 500 == 0:
                 logger.info(f"i={i}")
 
     res = pd.DataFrame(row)
