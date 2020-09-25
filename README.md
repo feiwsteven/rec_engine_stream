@@ -20,5 +20,10 @@ To treat the data as a streaming data, we let the review time `reviewTime` be th
 Two papers are saved in the `paper` folder. 
 
 
+## Useful links
+https://github.com/blei-lab/context-selection-embedding
+
+
+
 
 
