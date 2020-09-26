@@ -22,7 +22,7 @@ Two papers are saved in the `paper` folder.
 
 ## Useful links
 https://github.com/blei-lab/context-selection-embedding
-
+https://www.slideshare.net/justinbasilico/recent-trends-in-personalization-at-netflix?next_slideshow=1
 
 
 
