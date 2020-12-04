@@ -6,56 +6,12 @@ Created on Sun Oct  4 20:22:35 2020
 @author: ying
 """
 
+import os
 import numpy as np
 import pandas as pd
 import sklearn 
 import scipy
 import matplotlib.pyplot as plt
-
-# specify prior parameters
-a_r, b_r = 1, 1 # R_{ij} ~ Bern(p), p ~ Beta(a_r, b_r)
-alp_u, beta_u = 1, 1 # U_i ~ N(0, sig_u^2), sig_u^2 ~ IG(alp_u, beta_u)
-alp_v, beta_v = 1, 1 # V-j ~ N(0, sig_v^2), sig_v^2 ~ IG(alp_v, beta_v)
-sig_y2 = 10, # alpha_y ~ N(0,sigma_y^2 I_K), beta_y ~ N(0,sigma_y^2 I_J)
-
-# dimensions
-J = 10 # dimension of beta_y and W_i
-K = 10 # dimension of alpha_y and X_j
-L = 10 # dimension of U_i and V_j 
-n = 1000 # nrow(Y)
-m = 2000 # ncol(Y)
-
-# generate observed
-X = np.random.normal(0,1, (m,K))
-W = np.random.normal(0,1, (n,J))
-beta0 = np.random.normal(0,1, (J,1)) # true beta0
-alpha0 = np.random.normal(0,1, (K,1)) # true alpha0
-U = np.random.normal(0,1, (n, L)) # truth: sigma_u = 1
-V = np.random.normal(0,1, (m, L)) # truth: sigma_v = 1
-Zmeans = np.matmul(W, beta0) + np.matmul(X, alpha0).transpose() + np.matmul(U, V.transpose())
-Z = Zmeans + np.random.normal(0,1, (n,m))
-R = np.random.binomial(1, 0.01, (n,m)) # truth: p_r = 0.1
-Y = 1.0 * (Z>0)
-for i in range(n):
-    for j in range(m):
-        if R[i,j]==0:
-            Y[i,j] = float("nan")
-
-
-# sample from prior to start
-alpha_y = np.random.normal(0, np.sqrt(sig_y2), size = (1,K)) # alpha_y ~ N(0,sigma_y^2 I_K)
-beta_y = np.random.normal(0, np.sqrt(sig_y2), size = (1,J)) # beta_y ~ N(0,sigma_y^2 I_J)
-sigma_u2 = scipy.stats.invgamma.rvs(a= alp_u, scale = beta_u, size=1) # sigma_u^2 ~ IG(alp_u, beta_u)
-sigma_v2 = scipy.stats.invgamma.rvs(a= alp_v, scale = beta_v, size=1) # sigma_v^2 ~ IG(alp_v, beta_v)
-p_r = np.random.beta(a_r, b_r, size=1)
-
-
-# sample posterior in gibbs sampler
-a_p = a_r + sum(sum(R))
-b_p = b_r + sum(sum(1-R))
-p_e = np.random.beta(a_p, b_p, size=1)
-
-N = 1000
 
 
 #### the basic gibbs sampler
@@ -93,19 +49,19 @@ def gibbs(N, R, Y, X, U, V, alpha_y, beta_y, sigma_u2, sigma_v2, alp_u, beta_u, 
         OBj.append(observed)
     
     for nn in range(N):
-        print(nn)
+        #print(nn)
         # sample sigma_u2 and sigma_v2
         sigma_u2 = scipy.stats.invgamma.rvs(a= alp_u + n*L/2, scale = beta_u + sum(sum(U*U))/2, size=1)
         sigma_v2 = scipy.stats.invgamma.rvs(a= alp_v + m*L/2, scale = beta_v + sum(sum(V*V))/2, size=1)
-        SIG_U2.append(sigma_u2)
-        SIG_V2.append(sigma_v2)
+        SIG_U2.append(sigma_u2[0])
+        SIG_V2.append(sigma_v2[0])
         
         # sample alpha_y and beta_y
         sig_alp = np.eye(K)/sig_y2
         sum_r = sum(R)
         for j in range(m):
             sig_alp = sig_alp + sum_r[j] * np.matmul(np.matrix(X[j,]).transpose(), np.matrix(X[j,]))
-        sig_alp = np.linalg.inv(sig_alp)
+        sig_alp = np.linalg.inv(sig_alp) #choleskey decomp
         
         sig_beta = np.eye(J)/sig_y2
         sum_rt = sum(R.transpose())
@@ -114,7 +70,7 @@ def gibbs(N, R, Y, X, U, V, alpha_y, beta_y, sigma_u2, sigma_v2, alp_u, beta_u, 
         sig_beta = np.linalg.inv(sig_beta)
         
         mu_alp = 0
-        sum_rx = sum(R * (Z - np.matmul(W, beta_y.transpose()) - np.matmul(U,V.transpose())))
+        sum_rx = sum(R * (Z - np.matmul(W, beta_y.transpose()) - np.matmul(U,V.transpose())))#save U'V
         for j in range(m):
             mu_alp = mu_alp + sum_rx[j] * X[j,]
         mu_alp = np.matmul(sig_alp, mu_alp)
@@ -166,24 +122,77 @@ def gibbs(N, R, Y, X, U, V, alpha_y, beta_y, sigma_u2, sigma_v2, alp_u, beta_u, 
     return SIG_U2, SIG_V2, ALP_Y, BETA_Y, UU, VV, ZZ
 
     
-    
+# specify prior parameters
+a_r, b_r = 1, 1 # R_{ij} ~ Bern(p), p ~ Beta(a_r, b_r)
+alp_u, beta_u = 1, 1 # U_i ~ N(0, sig_u^2), sig_u^2 ~ IG(alp_u, beta_u)
+alp_v, beta_v = 1, 1 # V-j ~ N(0, sig_v^2), sig_v^2 ~ IG(alp_v, beta_v)
+sig_y2 = 10, # alpha_y ~ N(0,sigma_y^2 I_K), beta_y ~ N(0,sigma_y^2 I_J)
+
+coef_scale = os.environ["arg1"]
+n = os.environ["arg2"]
+m = os.environ["arg3"]
+random_dim = os.environ["arg4"]
+
+# dimensions
+J = random_dim # dimension of beta_y and W_i
+K = random_dim # dimension of alpha_y and X_j
+L = random_dim # dimension of U_i and V_j 
+#n = 1000 # nrow(Y)
+#m = 2000 # ncol(Y)
+
+# generate observed
+X = np.random.normal(0,1, (m,K))
+W = np.random.normal(0,1, (n,J))
+beta0 = (2*np.random.binomial(1,0.5,J).reshape((J,1))-1)* coef_scale #np.random.normal(0,1, (J,1)) # true beta0 ~ uniform, larger value
+alpha0 = (2*np.random.binomial(1,0.5,J).reshape((J,1))-1)* coef_scale #np.random.normal(0,1, (K,1)) # true alpha0
+U = np.random.normal(0,1, (n, L)) # truth: sigma_u = 1
+V = np.random.normal(0,1, (m, L)) # truth: sigma_v = 1
+Zmeans = np.matmul(W, beta0) + np.matmul(X, alpha0).transpose() + np.matmul(U, V.transpose())
+Z = Zmeans + np.random.normal(0,1, (n,m)) # var of Zmeans should be large
+R = np.random.binomial(1, 0.01, (n,m)) # truth: p_r = 0.1
+Y = 1.0 * (Z>0)
+for i in range(n):
+    for j in range(m):
+        if R[i,j]==0:
+            Y[i,j] = float("nan")
+
+snr = Zmeans[R>0].std()**2/ Z[R>0].std()**2
+
+# sample from prior to start ~ start from estimator
+alpha_y = np.random.normal(0, np.sqrt(sig_y2), size = (1,K)) # alpha_y ~ N(0,sigma_y^2 I_K)
+beta_y = np.random.normal(0, np.sqrt(sig_y2), size = (1,J)) # beta_y ~ N(0,sigma_y^2 I_J)
+sigma_u2 = scipy.stats.invgamma.rvs(a= alp_u, scale = beta_u, size=1) # sigma_u^2 ~ IG(alp_u, beta_u)
+sigma_v2 = scipy.stats.invgamma.rvs(a= alp_v, scale = beta_v, size=1) # sigma_v^2 ~ IG(alp_v, beta_v)
+p_r = np.random.beta(a_r, b_r, size=1)
+
+
+# sample posterior in gibbs sampler
+a_p = a_r + sum(sum(R))
+b_p = b_r + sum(sum(1-R))
+p_e = np.random.beta(a_p, b_p, size=1)
+
+N = 1000
+
+
 
 res = gibbs(N,R,Y,X,U,V,alpha_y,beta_y,sigma_u2,sigma_v2,alp_u,beta_u,alp_v,beta_v,sig_y2)
-###############################
-# check posterior computation
 
-# check 
-# sample from prior N(0,sigma_y^2)
+# wrap up results
+df_snr = pd.DataFrame([snr])
+df_sigu = pd.DataFrame(res[0])
+df_sigv = pd.DataFrame(res[1])
+mt_alpy = np.matrix(np.zeros(shape=(N,J)))
+mt_betay = np.matrix(np.zeros(shape=(N,J)))
+for n in range(N):
+    mt_alpy[n,] = res[2][n]
+    mt_betay[n,] = res[3][n]
+df_alpy = pd.DataFrame(mt_alpy)
+df_betay = pd.DataFrame(mt_betay)
 
-alpha_y = np.random.normal(0, np.sqrt(sig_y2), size = (K,1)) # alpha_y ~ N(0,sigma_y^2 I_K)
-beta_y = np.random.normal(0, np.sqrt(sig_y2), size = (J,1)) # beta_y ~ N(0,sigma_y^2 I_J)
-    
-
-    
-    
-    
-    
-    
+df_sigu.to_csv("sigu_scale_"+str(coef_scale)+"n_"+str(n)+"m_"+str(m)+"L_"+str(L)+".csv")
+df_sigv.to_csv("sigv_scale_"+str(coef_scale)+"n_"+str(n)+"m_"+str(m)+"L_"+str(L)+".csv")
+df_alpy.to_csv("alpy_scale_"+str(coef_scale)+"n_"+str(n)+"m_"+str(m)+"L_"+str(L)+".csv")
+df_betay.to_csv("betay_scale_"+str(coef_scale)+"n_"+str(n)+"m_"+str(m)+"L_"+str(L)+".csv")  
     
     
     
