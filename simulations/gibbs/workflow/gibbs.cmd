@@ -10,7 +10,7 @@
 #SBATCH -e err_file/%j.err                 # File to which STDERR will be written, including job ID
 
 # Execute commands
-python2  gibbs.py
+python3  gibbs_simu.py
 
 # arg1 = seed
 

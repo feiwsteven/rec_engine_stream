@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "gibbs_simu.py", line 13, in <module>
+    from statsmodels.regression.linear_model import yule_walker
+  File "/home/yingjin/.local/lib/python2.7/site-packages/statsmodels/regression/__init__.py", line 1, in <module>
+    from .linear_model import yule_walker
+  File "/home/yingjin/.local/lib/python2.7/site-packages/statsmodels/regression/linear_model.py", line 1860
+    h = np.diag(wexog @ self.normalized_cov_params @ wexog.T)
+                      ^
+SyntaxError: invalid syntax

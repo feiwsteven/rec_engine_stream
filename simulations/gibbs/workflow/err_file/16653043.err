@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "gibbs_simu.py", line 10, in <module>
+    import numpy as np
+ModuleNotFoundError: No module named 'numpy'

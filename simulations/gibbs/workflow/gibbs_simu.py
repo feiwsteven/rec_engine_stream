@@ -12,7 +12,7 @@ import pandas as pd
 from scipy import stats
 from statsmodels.regression.linear_model import yule_walker
 
-dir_name = os.path.dirname(__file__)
+dir_name = "/home/yingjin/gibbs/rec_engine_stream/simulations/gibbs/workflow"
 os.chdir(dir_name)
 from gibbs_funcs import gibbs
 
@@ -22,7 +22,7 @@ from gibbs_funcs import gibbs
 a_r, b_r = 1, 1 # R_{ij} ~ Bern(p), p ~ Beta(a_r, b_r)
 alp_u, beta_u = 1, 1 # U_i ~ N(0, sig_u^2), sig_u^2 ~ IG(alp_u, beta_u)
 alp_v, beta_v = 1, 1 # V-j ~ N(0, sig_v^2), sig_v^2 ~ IG(alp_v, beta_v)
-sig_y2 = 10, # alpha_y ~ N(0,sigma_y^2 I_K), beta_y ~ N(0,sigma_y^2 I_J)
+sig_y2 = 10 # alpha_y ~ N(0,sigma_y^2 I_K), beta_y ~ N(0,sigma_y^2 I_J)
 
 coef_scale = float(os.environ["arg1"])
 mnid = int(os.environ["arg2"])
@@ -96,21 +96,23 @@ res = gibbs(N,R,Y,W,X,Z,U,V,alpha_y,beta_y,sigma_u2,sigma_v2,alp_u,beta_u,alp_v,
 
 
 # wrap up results
+conv_itrs = int(res[8])
 df_snr = pd.DataFrame([snr])
 df_sigu = pd.DataFrame(res[0])
 df_sigv = pd.DataFrame(res[1])
-mt_alpy = np.matrix(np.zeros(shape=(N+1,J)))
-mt_betay = np.matrix(np.zeros(shape=(N+1,J)))
+mt_alpy = np.matrix(np.zeros(shape=(conv_itrs+1,J)))
+mt_betay = np.matrix(np.zeros(shape=(conv_itrs+1,J)))
 # append truth
 mt_alpy[0,] = alpha0.reshape(-1)
 mt_betay[0,] = beta0.reshape(-1)
-for n in range(N):
-    mt_alpy[n+1,] = res[2][n]
-    mt_betay[n+1,] = res[3][n]
+
+for nn in range(conv_itrs):
+    mt_alpy[nn+1,] = res[2][nn]
+    mt_betay[nn+1,] = res[3][nn]
 df_alpy = pd.DataFrame(mt_alpy)
 df_betay = pd.DataFrame(mt_betay)
 df_times = pd.DataFrame(res[7])
-conv_itrs = res[8]
+
 
 # MSE of posterior mean
 sigu_err = (df_sigu - 1).mean()[0] #np.sqrt(np.mean(np.power(df_sigu-1,2)))

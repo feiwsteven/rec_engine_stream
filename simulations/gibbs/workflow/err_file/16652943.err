@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "gibbs_simu.py", line 13, in <module>
+    from statsmodels.regression.linear_model import yule_walker
+ImportError: No module named statsmodels.regression.linear_model

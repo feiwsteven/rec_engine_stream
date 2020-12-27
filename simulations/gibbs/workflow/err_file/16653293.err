@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "gibbs_simu.py", line 18, in <module>
+    os.chdir(dir_name)
+FileNotFoundError: [Errno 2] No such file or directory: ''
