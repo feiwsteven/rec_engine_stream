@@ -13,7 +13,72 @@ import time
 from scipy import stats
 import scipy
 from statsmodels.regression.linear_model import yule_walker
+import multiprocessing
+from statsmodels.tsa.ar_model import AR
 
+import warnings
+warnings.filterwarnings('ignore')
+
+#### gibbs sampler with parallel computing, diagnosis, etc.
+# N is the number of iterations
+# R is the indicator matrix of observations, dim(R)=(n,m)
+# Y is the ratings (binary), dim(Y)=(n,m)
+# W is the user feature matrix, dim(W)=(n,J)
+# X is the item feature matrix, dim(X)=(m,K)
+# Z is the initialized indicators
+# U is the initialized noise matrix, dim(U)=(n,L)
+# V is the initialized noise matrix, dim(V)=(m,L)
+# L is the dimension of U_i and V_j
+# alpha_y, beta_y, sigma_u2, sigma_v2 are initial values from prior
+# alp_u, beta_u, alp_v, beta_v, sig_y2 are prior parameters (we choose sig_y2 large for a flat prior)
+# N_tot is the total number of iterations
+# N_sing is the number of iterations for each check
+# n_chain is the number of markov chains
+def full_gibbs(N_tot, N_sing, n_chain, R, Y, W, X, Z, L, alp_u, beta_u, alp_v, beta_v, sig_y2, a_r, b_r):
+    pool = multiprocessing.Pool(processes=n_chain)
+    
+    # initiate
+    args = []
+    for i in range(n_chain):
+        init = initial_gibbs(Y,W,X,Z,R,L,sig_y2, alp_u, beta_u, alp_v, beta_v, a_r, b_r)
+        new_arg = list((N_sing,R,Y,W,X) + init + (alp_u, beta_u, alp_v, beta_v, sig_y2))
+        args.append(new_arg)
+    results = pool.map(base_gibbs_wrapper, args)
+
+#### initialize a gibbs sampler chain
+def initial_gibbs(Y,W,X,Z,R,L, sig_y2, alp_u, beta_u, alp_v, beta_v, a_r, b_r):
+    n, m = R.shape
+    J = W.shape[1]
+    K = X.shape[1]
+    
+    # sample from prior to start ~ start from estimator
+    alpha_y = np.random.normal(0, np.sqrt(sig_y2), size = (1,K)) # alpha_y ~ N(0,sigma_y^2 I_K)
+    beta_y = np.random.normal(0, np.sqrt(sig_y2), size = (1,J)) # beta_y ~ N(0,sigma_y^2 I_J)
+    sigma_u2 = stats.invgamma.rvs(a= alp_u, scale = beta_u, size=1) # sigma_u^2 ~ IG(alp_u, beta_u)
+    sigma_v2 = stats.invgamma.rvs(a= alp_v, scale = beta_v, size=1) # sigma_v^2 ~ IG(alp_v, beta_v)
+    p_r = np.random.beta(a_r, b_r, size=1)
+   
+    
+    # sample initial from kinds of posterior / expectation
+    U = np.random.normal(0,1, (n, L)) # sample iid N(0,1)
+    V = np.random.normal(0,1, (m, L)) # sample iid N(0,1)
+    Z = np.zeros((n,m))
+    for i in range(n):
+        for j in range(m):
+            if R[i,j] == 1 and Y[i,j] == 0:
+                Z[i,j] = -np.sqrt(2/np.pi)
+            elif R[i,j] ==1 and Y[i,j] == 1:
+                Z[i,j] = np.sqrt(2/np.pi)
+    
+    # sample posterior in gibbs sampler
+    a_p = a_r + sum(sum(R))
+    b_p = b_r + sum(sum(1-R))
+    p_e = np.random.beta(a_p, b_p, size=1)
+    
+    return( (Z, U, V, alpha_y, beta_y, sigma_u2, sigma_v2) )
+    
+def base_gibbs_wrapper(args):
+    return base_gibbs(*args)
 
 #### the basic gibbs sampler
 # N is the number of iterations
@@ -27,7 +92,7 @@ from statsmodels.regression.linear_model import yule_walker
 # L is the dimension of U_i and V_j
 # alpha_y, beta_y, sigma_u2, sigma_v2 are initial values from prior
 # alp_u, beta_u, alp_v, beta_v, sig_y2 are prior parameters (we choose sig_y2 large for a flat prior)
-def gibbs(N, R, Y, W, X, Z, U, V, alpha_y, beta_y, sigma_u2, sigma_v2, alp_u, beta_u, alp_v, beta_v, sig_y2):
+def base_gibbs(N, R, Y, W, X, Z, U, V, alpha_y, beta_y, sigma_u2, sigma_v2, alp_u, beta_u, alp_v, beta_v, sig_y2):
     n, m = R.shape
     J = W.shape[1]
     K = X.shape[1]
@@ -40,8 +105,8 @@ def gibbs(N, R, Y, W, X, Z, U, V, alpha_y, beta_y, sigma_u2, sigma_v2, alp_u, be
     UU = []
     VV = []
     ZZ = []
-    PASS = []
     TIMES = []
+    LOG_LIKES = []
     
     OBi = []
     for i in range(n):
@@ -59,6 +124,7 @@ def gibbs(N, R, Y, W, X, Z, U, V, alpha_y, beta_y, sigma_u2, sigma_v2, alp_u, be
             now_time = time.time()
             TIMES.append(now_time - start_time)
             start_time = time.time()
+        
         #print(nn)
         # sample sigma_u2 and sigma_v2
         sigma_u2 = stats.invgamma.rvs(a= alp_u + n*L/2, scale = beta_u + sum(sum(U*U))/2, size=1)
@@ -152,55 +218,64 @@ def gibbs(N, R, Y, W, X, Z, U, V, alpha_y, beta_y, sigma_u2, sigma_v2, alp_u, be
                         Z[i,j] = stats.truncnorm.rvs(-np.inf, -zmean[i,j], loc=zmean[i,j],scale=1,size=1)
         ZZ.append(Z)
         
+        # compute likelihood
+        log_like = log_likelihood(Y,R,X,W, Z,U,V,sigma_u2,sigma_v2,alpha_y, beta_y, sig_y2, alp_u, alp_v, beta_u, beta_v)
+        LOG_LIKES.append(log_like)
+        
+        
         print(nn)
         print(alpha_y)
         print(beta_y)
-        # diagnosis every 500 steps
-        if nn >0 and nn % 500 == 0:
-            # geweke diag 
-            first_a = np.zeros((int(0.1*nn),L))
-            first_b = np.zeros((int(0.1*nn),L))
-            last_a = np.zeros((int(0.5*nn),L))
-            last_b = np.zeros((int(0.5*nn),L))
-            for ii in range(int(0.1*nn)):
-                first_a[ii,] = ALP_Y[ii]
-                first_b[ii,] = BETA_Y[ii]
-            for ii in range(int(0.5*nn)):
-                last_a[ii] = ALP_Y[nn-1-ii]
-                last_b[ii] = BETA_Y[nn-1-ii]
-            # test for alpha_y
-            stats_a = [None]*L
-            pass_flag = True
-            for jj in range(L):
-                f_jj = first_a[:,jj]
-                l_jj = last_a[:,jj]
-                stat_jj = (f_jj.mean() - l_jj.mean()) / np.sqrt( spec(f_jj)/int(0.1*nn) + spec(f_jj)/int(0.5*nn))
-                stats_a[jj] = stat_jj
-                if abs(stat_jj) > 1.98:
-                    pass_flag = False
-            # test for beta_y
-            stats_b = [None]*L
-            for jj in range(L):
-                f_jj = first_b[:,jj]
-                l_jj = last_b[:,jj]
-                stat_jj = (f_jj.mean() - l_jj.mean()) / np.sqrt( spec(f_jj)/int(0.1*nn) + spec(f_jj)/int(0.5*nn))
-                stats_b[jj] = stat_jj
-                if abs(stat_jj) > 1.98:
-                    pass_flag = False
-            PASS.append(pass_flag)
-            if pass_flag:
-                return SIG_U2, SIG_V2, ALP_Y, BETA_Y, UU, VV, ZZ, TIMES, nn
-                
+
                 
     
-    return SIG_U2, SIG_V2, ALP_Y, BETA_Y, UU, VV, ZZ, TIMES, nn
+    return SIG_U2, SIG_V2, ALP_Y, BETA_Y, UU, VV, ZZ, LOG_LIKES, TIMES
 
     
 def spec(x, order=2):
     beta, sigma = yule_walker(x,order)
     return sigma**2 / (1. - np.sum(beta))**2
+
+def log_likelihood(Y,R,X,W, Z,U,V,sigma_u2,sigma_v2,alpha_y, beta_y, sig_y2, alp_u, alp_v, beta_u, beta_v):
+    n, m = R.shape
+    J = W.shape[1]
+    K = X.shape[1]
+    L = U.shape[1]
+    
+    ll = 0
+    for i in range(n):
+        for j in range(m):
+            if R[i,j] == 1:
+                ll -= 0.5 * (Z[i,j] - sum(sum(W[i,]*np.array(beta_y))) - sum(sum(X[j,]*np.array(alpha_y))) - sum(U[i,]*V[j,]))**2
+                ll -= 0.5 * sum(sum(np.array(beta_y)**2))/sig_y2 + 0.5 * sum(sum(np.array(alpha_y)**2))/sig_y2
+    ll -= np.log(sigma_u2) * 0.5 * (n*L+2*alp_u+2) + np.log(sigma_v2) * (m*L+2*alp_v+2)*0.5
+    ll -= 0.5 * (sum(sum(U**2)) + beta_u) / sigma_u2 + 0.5 * ( sum(sum(V**2)) + beta_v ) / sigma_v2
+    
+    return(ll[0])
+
+# df is a dataframe of all sampled parameters
+def EffectiveSize(df):
+    nn, mm = df.shape
+    df.columns = ["0"]*mm
+    v0 = []
+    ESS = []
+    for jj in range(mm):
+        xx = df.iloc[:,jj]
+        xx_mod = AR(xx)
+        xx_res = xx_mod.fit(maxlag=100,ic='aic')
+        v0.append(xx_res.sigma2/(1.0-sum(xx_res.params))**2)
+    for jj in range(mm):
+        xx = df.iloc[:,jj]
+        ess = xx.std()**2 / v0[jj] * nn
+        ESS.append(ess)
+    return(ESS)
     
     
-
-
-
+    
+    
+    
+    
+    
+    
+    
+    
