@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "gibbs_simu.py", line 311, in <module>
+    sigu_err = (df_sigu - 1).mean()[0] #np.sqrt(np.mean(np.power(df_sigu-1,2)))
+IndexError: invalid index to scalar variable.
